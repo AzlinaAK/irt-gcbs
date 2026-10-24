@@ -1,0 +1,342 @@
+---
+title: "Item Response Theory Analysis of the Generic Conspiracist Beliefs Scale"
+author: "Azlina Amir Kassim"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(mirt)
+set.seed(123)
+```
+
+## 1. Overview
+
+This report fits graded response models (GRMs) to the 15-item Generic
+Conspiracist Beliefs Scale (GCBS; Brotherton, French & Pickering, 2013).
+The scale was built around five related facets of three items each:
+Government Malfeasance (GM: Q1, Q6, Q11), Malevolent Global Conspiracies
+(MG: Q2, Q7, Q12), Extraterrestrial Cover-up (ET: Q3, Q8, Q13), Personal
+Wellbeing (PW: Q4, Q9, Q14) and Control of Information (CI: Q5, Q10,
+Q15), but it is usually scored as a single total.
+
+This analysis asks the following questions:
+
+1.  Can the items be treated as one latent trait, and is there evidence
+    of more than one dimension? (1-, 2- and 3-factor models were
+    compared.)
+2.  Do items function differently for men and women (DIF)?
+3.  Which respondents do not fit the model?
+
+## 2. Data
+
+The data come from the Open Source Psychometrics Project
+([openpsychometrics.org/\_rawdata](https://openpsychometrics.org/_rawdata/),
+file GCBS.zip). They were collected online in 2016, mostly for personal
+interest, so this is a convenience sample (n = 2,495 before exclusions).
+
+Each item is scored from 1 (definitely not true) to 5 (definitely true).
+A score of 0 indicates a missing response.
+
+```{r data-prep}
+gcbs <- read.csv("data.csv", header = TRUE, stringsAsFactors = FALSE)
+
+# Keep gender codes 1 (male) and 2 (female) and the 15 items
+gcbs <- subset(gcbs, gender == 1 | gender == 2, select = c(Q1:Q15, gender))
+
+# 0 = missing; listwise deletion
+gcbs[gcbs == 0] <- NA
+gcbs <- na.omit(gcbs)
+
+gcbs$gender2 <- ifelse(gcbs$gender == 2, "F", "M")
+nrow(gcbs)
+table(gcbs$gender2)
+```
+
+After excluding respondents with missing item responses or a gender code
+other than 1 or 2, N = 2,269 (1,086 women and 1,183 men).
+
+## 3. Unidimensional graded response model
+
+```{r mod1}
+mod1 <- mirt(gcbs[, 1:15], 1, itemtype = "graded", verbose = FALSE)
+```
+
+### Item parameters
+
+`a` is discrimination (how sharply an item separates people at different
+trait levels). `b1`-`b4` are the trait levels at which a respondent has
+a 50% chance of answering at or above each successive category.
+
+```{r mod1-coef}
+coef(mod1, IRTpars = TRUE, simplify = TRUE)$items
+```
+
+### Loadings
+
+```{r mod1-summary}
+summary(mod1)
+```
+
+### Global fit
+
+```{r mod1-m2}
+M2(mod1)
+```
+
+**Interpretation:** The one-factor model showed good global fit: RMSEA =
+.043 (90% CI .038–.049), CFI = .97 and TLI = .96. SRMSR = .077 is just
+under the .08 guideline. The M2 test was significant, M2(45) = 237.4, p
+\< .001, indicating the model does not fit perfectly. With a sample this
+large the test is very sensitive to small misfit, so the approximate fit
+indices are the better guide.
+
+### Item fit
+
+```{r mod1-itemfit}
+itf <- itemfit(mod1)
+itf$p.adj <- round(p.adjust(itf$p.S_X2, method = "BH"), 3)
+itf
+
+```
+
+**Interpretation:** S-X² values are interpreted alongside the item
+RMSEA, because with a sample of this size even trivial misfit is
+statistically significant.
+
+Four items (Q7, Q9, Q10 and Q11) had unadjusted p-values below .05, but
+the item-level RMSEA values were all ≤ .012, indicating negligible
+misfit, and none remained significant after Benjamini-Hochberg
+correction for 15 comparisons (all adjusted p ≥ .084). No items showed
+meaningful misfit.
+
+### Category response curves
+
+```{r mod1-plot, fig.width=10, fig.height=8}
+plot(mod1, type = "trace", as.table = TRUE,
+     auto.key = list(text = c("Definitely not true", "Probably not true",
+                              "Not sure", "Probably true", "Definitely true"),
+                     space = "right", points = FALSE, lines = TRUE))
+```
+
+**Interpretation:** The category response curves show that the response
+options are ordered as intended for all 15 items: as belief increases,
+the most likely answer moves from “definitely not true” to “definitely
+true” with no reversals, consistent with the increasing thresholds
+(b1–b4). “Probably true” is the most distinct middle category, whereas
+“Not sure” has the lowest peak and is rarely the single most likely
+response, so it contributes less information than the other options. The
+curves also reflect the item parameters: Q12 has the steepest curves
+(highest discrimination) and Q10 the flattest (lowest). The ET items
+(Q3, Q8, Q13) are harder to endorse, with curves located at higher
+belief levels and overlapping middle categories, whereas Q15 is easy to
+endorse, with curves located at lower belief levels.
+
+### Item endorsement for an average respondent
+
+The probability of answering 4 or 5 at the sample mean (theta = 0).
+
+```{r endorse}
+endorse <- sapply(1:15, function(i)
+  sum(probtrace(extract.item(mod1, i), matrix(0))[4:5]))
+
+endorse_tab <- data.frame(item = paste0("Q", 1:15),
+                          p_endorse = round(endorse, 3))
+endorse_tab[order(-endorse_tab$p_endorse), ]
+```
+
+## 4. Is the scale unidimensional? Exploratory models
+
+Two- and three-factor exploratory models are compared with the
+one-factor model.
+
+```{r exploratory}
+mod2 <- mirt(gcbs[, 1:15], 2, verbose = FALSE)
+mod3 <- mirt(gcbs[, 1:15], 3, verbose = FALSE)
+
+anova(mod1, mod2)
+anova(mod2, mod3)
+```
+
+```{r oblimin}
+summary(mod3, rotate = "oblimin")
+```
+
+An oblique (oblimin) rotation is used because the facets are expected to
+correlate. A four-factor model was also attempted. It did not converge
+reliably (a negative likelihood-ratio statistic against the three-factor
+model), so it is not reported; with 15 items and three items per facet,
+the data probably cannot support that much structure.
+
+```{r mod4, eval=FALSE}
+mod4 <- mirt(gcbs[, 1:15], 4)   # attempted; did not converge reliably, so not run here
+```
+
+**Interpretation.** Fit improved significantly from one to two factors
+(p \< .001) and from two to three factors (p \< .001). A four-factor
+model did not converge, so three factors is the upper limit this item
+set supports. In the three-factor oblimin solution, two factors
+correspond to complete published facets: ET (Q3, Q8, Q13) and MG (Q2,
+Q7, Q12). The remaining items (GM, CI, and PW items Q4 and Q14) load
+mainly on a single broad factor. Q9 (PW) loads weakly and about equally
+on all three factors, so it doesn’t clearly belong to any of them. The
+factors were strongly correlated (r = .61 to .80). Although the scale
+was developed with five facets, each has only three items, which may
+make them hard to separate in an exploratory analysis. A confirmatory
+comparison would be needed to test the published structure directly.
+
+## 5. Differential item functioning (gender)
+
+DIF tests whether men and women with the same level of the trait answer
+an item differently. A one-factor graded model is fitted to both groups
+with all item parameters constrained equal across groups, and group
+means and variances free. Each item is then released in turn (its slope
+and four intercepts are allowed to differ) and compared with the
+constrained model using a likelihood-ratio test. p-values are adjusted
+with the Benjamini-Hochberg procedure.
+
+```{r dif-setup}
+items <- gcbs[, 1:15]
+
+mg <- multipleGroup(items, 1, itemtype = "graded",
+                    group = gcbs$gender2,
+                    invariance = c(colnames(items), "free_means", "free_var"),
+                    SE = TRUE, verbose = FALSE)
+
+dif_results <- DIF(mg,
+                   which.par = c("a1", "d1", "d2", "d3", "d4"),
+                   scheme = "drop",
+                   p.adjust = "BH")
+dif_results
+```
+
+**Interpretation:** In this first pass, 13 of 15 items were flagged,
+which can occur when a few items differ and the rest are held equal. A
+sequential purification step (using BIC) therefore freed the clearest
+items one at a time and retested the rest.
+
+```{r dif-purify}
+dif_purified <- DIF(mg,
+                    which.par = c("a1", "d1", "d2", "d3", "d4"),
+                    scheme = "drop_sequential",
+                    seq_stat = "BIC",
+                    max_run = 10)
+dif_purified
+```
+
+**Interpretation:** Only Q3 and Q8 (both ET items) showed DIF (Q3: X²(5)
+= 67.7; Q8: X²(5) = 47.1; both adjusted p \< .001). Q13, the third ET
+item, was not flagged. To see the direction and size of the difference,
+a final model freed only these two items and the group-specific
+thresholds were compared (below), followed by expected-score plots.
+
+```{r dif-final}
+anchors <- colnames(items)[-c(3, 8)]
+
+mg_final <- multipleGroup(items, 1, itemtype = "graded",
+                          group = gcbs$gender2,
+                          invariance = c(anchors, "free_means", "free_var"),
+                          SE = TRUE, verbose = FALSE)
+
+coef(mg_final, IRTpars = TRUE, simplify = TRUE)
+
+
+
+
+```
+
+**Interpretation:** Men's thresholds were about 0.3–0.4 SD higher than
+women's for both items, with similar discrimination, so women were more
+likely to endorse them at the same level of overall belief. Separately
+from DIF, the latent trait was scaled with women as the reference group
+(mean = 0, variance = 1), and men’s estimated mean was slightly lower
+(−0.14) with greater variance (1.25).
+
+Plots are created for Q3 and Q8, the only items flagged after
+purification (all others were constrained equal across groups). They
+show the response difference on the 1–5 scale at each belief level.
+
+```{r dif-plots, fig.width=7, fig.height=4}
+itemplot(mg_final, 3, type = "score")
+itemplot(mg_final, 8, type = "score")
+```
+
+**Interpretation:** Only Q3 and Q8 (both ET items) showed gender DIF
+after purification. At the same level of overall belief, women were more
+likely to endorse them, by roughly 0.3–0.5 response points in the middle
+of the trait range. The DIF is statistically clear but moderate in size,
+and it affects two of the 15 items.
+
+## 6. Person fit
+
+Person-fit statistics flag respondents whose answers are unusual given
+the one-factor model.
+
+```{r personfit}
+pf <- personfit(mod1)
+flagged <- pf[abs(pf$Zh) > 3, ]
+nrow(flagged)
+```
+
+A cut-off of \|Zh\| \> 3 is used because \|Zh\| \> 2 flags about 5% of
+any sample by chance. Looking at the raw responses of flagged cases:
+
+```{r flagged-responses}
+ids <- as.numeric(rownames(flagged))
+fr <- gcbs[ids, 1:15]
+fr$avg_other <- rowMeans(fr[, c("Q1","Q2","Q4","Q5","Q6","Q7","Q9","Q10",
+                                "Q11","Q12","Q14","Q15")])
+fr$avg_ET <- rowMeans(fr[, c("Q3","Q8","Q13")])
+fr[, c("avg_other", "avg_ET")]
+```
+
+**Interpretation: S**ome flagged respondents score low on most items but
+high on the ET items (for example, respondent 2154 averaged 1.0 on the
+other items and 5.0 on the ET items). A few show the reverse pattern,
+scoring higher on most items but low on the ET items (for example,
+respondent 2068, 3.6 vs 1.0). This is a descriptive observation, not a
+tested result. These respondents were selected because they misfit a
+one-factor model, so such patterns are partly expected. Counting how
+common each pattern is across all respondents, and screening for
+careless responding, would be needed before drawing conclusions.
+
+## 7. Conclusions
+
+- A single-factor graded response model fits acceptably (see M2 above),
+  which supports scoring the GCBS as one total.
+- More than one dimension is also supported. ET and MG separate clearly,
+  consistent with the published facet structure.
+- No items showed meaningful misfit: four had unadjusted p \< .05 but
+  with negligible effect sizes, and none survived correction for
+  multiple comparisons.
+- Only two of 15 items (Q3 and Q8, both ET) showed gender DIF after
+  purification, with women more likely to endorse them at the same level
+  of belief.
+
+## 8. Limitations
+
+- Convenience sample collected online, with no check for careless
+  responding.
+- Only male and female respondents are included.
+- The four-factor model did not converge, so conclusions about
+  dimensionality stop at three factors. The published five-facet
+  structure was not tested confirmatorily.
+- DIF was tested by constraining all items equal and identifying DIF
+  items by sequential purification with BIC. Effect sizes were read from
+  expected-score plots and not computed formally.
+
+## References
+
+Brotherton, R., French, C. C., & Pickering, A. D. (2013). Measuring
+belief in conspiracy theories: The Generic Conspiracist Beliefs Scale.
+*Frontiers in Psychology, 4*, 279.
+
+Open Source Psychometrics Project. (2016). *Answers to the Generic
+Conspiracist Beliefs Scale* [Data
+set]. <https://openpsychometrics.org/_rawdata/>
